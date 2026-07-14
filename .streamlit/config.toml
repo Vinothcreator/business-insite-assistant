@@ -1,0 +1,34 @@
+# Professional Financial Dashboard Theme (Dark)
+[theme]
+base = "dark"
+primaryColor = "#60A5FA"             # Bright blue for dark mode
+backgroundColor = "#0F172A"          # Deep slate
+secondaryBackgroundColor = "#1E293B" # Slightly lighter slate
+codeBackgroundColor = "#1E293B"
+textColor = "#F1F5F9"                # Light text
+linkColor = "#60A5FA"
+borderColor = "#334155"
+codeTextColor = "#CBD5E1"
+showWidgetBorder = true
+showSidebarBorder = true
+baseRadius = "6px"
+buttonRadius = "6px"
+
+# Typography - Clean, professional fonts
+font = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+headingFont = "'Inter':https://fonts.googleapis.com/css2?family=Inter:wght@600;700&display=swap"
+codeFont = "'JetBrains Mono':https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&display=swap"
+baseFontSize = 14
+baseFontWeight = 400
+codeFontSize = "13px"
+headingFontSizes = ["28px", "22px", "18px", "16px", "14px", "12px"]
+headingFontWeights = [700, 600, 600, 600, 500, 500]
+linkUnderline = false
+
+[theme.sidebar]
+backgroundColor = "#0F172A"
+secondaryBackgroundColor = "#1E293B"
+codeBackgroundColor = "#1E293B"
+textColor = "#F1F5F9"
+borderColor = "#334155"
+primaryColor = "#60A5FA"
