@@ -296,7 +296,18 @@ def setup_database():
                 
             # Determine number of items in this order (to allow association rules!)
             num_items = int(np.random.choice([1, 2, 3], p=[0.70, 0.25, 0.05]))
-            sampled_prods = df_products.sample(n=num_items)
+            
+            # Year-specific category weights for distinct chart visual shifts
+            yr = current_date.year
+            if yr == 2024:
+                cat_weights = df_products["category"].apply(lambda c: 6.0 if c == "Cloud Infrastructure" else 1.0)
+            elif yr == 2025:
+                cat_weights = df_products["category"].apply(lambda c: 6.0 if c == "Professional Services" else 1.0)
+            else:
+                cat_weights = df_products["category"].apply(lambda c: 6.0 if c == "SaaS Software" else 1.0)
+            
+            prob_dist = cat_weights / cat_weights.sum()
+            sampled_prods = df_products.sample(n=num_items, weights=prob_dist, replace=False)
             
             for _, prod in sampled_prods.iterrows():
                 prod_id = prod["product_id"]

@@ -111,8 +111,8 @@ def mask_pii_data(df):
     """
     df_masked = df.copy()
     
-    # Name column patterns
-    name_cols = [c for c in df_masked.columns if 'name' in c.lower() or 'customer' in c.lower() and 'id' not in c.lower()]
+    # Name column patterns (excluding product, category, and item names)
+    name_cols = [c for c in df_masked.columns if ('name' in c.lower() or 'customer' in c.lower()) and 'id' not in c.lower() and 'product' not in c.lower() and 'category' not in c.lower() and 'item' not in c.lower()]
     # Email column patterns
     email_cols = [c for c in df_masked.columns if 'email' in c.lower()]
     # Phone column patterns
