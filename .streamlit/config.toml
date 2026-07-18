@@ -32,3 +32,14 @@ codeBackgroundColor = "#1E293B"
 textColor = "#F1F5F9"
 borderColor = "#334155"
 primaryColor = "#60A5FA"
+
+[server]
+headless = true
+enableCORS = false
+enableXsrfProtection = false
+address = "0.0.0.0"
+maxUploadSize = 200
+
+[browser]
+gatherUsageStats = false
+
