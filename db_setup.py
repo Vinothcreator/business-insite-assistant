@@ -169,8 +169,8 @@ def setup_database():
     print("[SUCCESS] Raw and metadata tables created.")
     
     # 4. Generate Mock Data
-    print("[INFO] Generating mock operational data (July 2025 to July 2026)...")
-    start_date = datetime(2025, 7, 1).date()
+    print("[INFO] Generating mock operational data (January 2024 to July 2026)...")
+    start_date = datetime(2024, 1, 1).date()
     end_date = datetime(2026, 7, 31).date()
     num_days = (end_date - start_date).days + 1
     
@@ -468,7 +468,7 @@ def setup_database():
     );
     """)
     date_records = []
-    d_start = datetime(2025, 7, 1).date()
+    d_start = datetime(2024, 1, 1).date()
     d_end = datetime(2026, 7, 31).date()
     curr = d_start
     while curr <= d_end:

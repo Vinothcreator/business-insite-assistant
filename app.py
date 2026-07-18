@@ -322,6 +322,13 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 with tab1:
     st.header("Enterprise Sales Overview & Operations Insights")
     
+    selected_dash_year = st.selectbox(
+        "Filter Dashboard by Year",
+        options=["All Years", "2024", "2025", "2026"],
+        index=0,
+        key="executive_dashboard_year_filter"
+    )
+    
     role = st.session_state.role
     
     # Fetch KPI metrics safely depending on role
@@ -340,8 +347,9 @@ with tab1:
     # 3. Sales & Monthly (Blocked for Operations Manager due to financial columns)
     if role != "Operations Manager":
         df_sales = run_db_query("""
-            SELECT f.*, r.region, r.channel as sales_channel 
+            SELECT f.*, p.product_name, p.category, r.region, r.channel as sales_channel 
             FROM fact_sales f 
+            LEFT JOIN dim_products p ON f.product_id = p.product_id
             LEFT JOIN dim_regions r ON f.region_id = r.region_id 
             WHERE f.status='Completed';
         """, show_error=False)
@@ -349,11 +357,18 @@ with tab1:
     else:
         # Operations manager gets order counts and statuses only (no financial data)
         df_sales = run_db_query("""
-            SELECT f.order_id, f.customer_id, f.product_id, f.date_id, f.quantity, f.status, r.region, r.channel as sales_channel
+            SELECT f.order_id, f.customer_id, f.product_id, f.date_id, f.quantity, f.status, p.product_name, p.category, r.region, r.channel as sales_channel
             FROM fact_sales f
+            LEFT JOIN dim_products p ON f.product_id = p.product_id
             LEFT JOIN dim_regions r ON f.region_id = r.region_id
             WHERE f.status='Completed';
         """, show_error=False)
+        
+    if not df_sales.empty and "date_id" in df_sales.columns:
+        df_sales["date_id_parsed"] = pd.to_datetime(df_sales["date_id"], errors='coerce')
+        df_sales["year_str"] = df_sales["date_id_parsed"].dt.year.astype(str)
+        if selected_dash_year != "All Years":
+            df_sales = df_sales[df_sales["year_str"] == selected_dash_year]
         
     # Calculate values for cards
     net_revenue = None
@@ -481,7 +496,7 @@ with tab1:
                 df_daily["date_id"] = df_daily["date_id"].astype(str)
                 df_daily = df_daily.sort_values("date_id").reset_index(drop=True)
                 
-                trend_title = "Daily Net Sales Revenue Trend (July 2025 - July 2026)"
+                trend_title = f"Daily Net Sales Revenue Trend ({selected_dash_year})"
                 
                 fig_trend = px.line(
                     df_daily, x="date_id", y="net_revenue",
@@ -530,14 +545,19 @@ with tab1:
                 st.info("No regional sales revenue data available.")
                 
         # Category breakdown
-        st.subheader("Product Category Performance Leaderboard")
-        df_product_summary = run_db_query("SELECT category, SUM(total_qty_sold) as total_qty, SUM(total_net_sales) as total_sales, SUM(total_profit) as total_profit FROM agg_sales_product_summary GROUP BY category;", show_error=False)
-        if not df_product_summary.empty:
+        st.subheader(f"Product Category Performance Leaderboard ({selected_dash_year})")
+        if not df_sales.empty and "category" in df_sales.columns:
+            df_product_summary = df_sales.groupby("category").agg(
+                total_qty=("quantity", "sum"),
+                total_sales=("net_revenue", "sum"),
+                total_profit=("profit_amount", "sum")
+            ).reset_index()
+            
             c1, c2 = st.columns(2)
             with c1:
                 fig_cat = px.bar(
                     df_product_summary, x="category", y="total_sales",
-                    title="Revenue by Product Category",
+                    title=f"Revenue by Product Category ({selected_dash_year})",
                     labels={"category": "Category", "total_sales": "Net Sales ($)"},
                     color="category", color_discrete_sequence=["#60A5FA", "#34D399", "#A78BFA"]
                 )
@@ -545,9 +565,29 @@ with tab1:
                 st.plotly_chart(fig_cat, use_container_width=True)
             with c2:
                 # Top Products list
-                df_products_top = run_db_query("SELECT product_name, category, total_qty_sold, total_net_sales FROM agg_sales_product_summary ORDER BY total_net_sales DESC LIMIT 5;", show_error=False)
-                st.write("**Top 5 Selling Products**")
+                df_products_top = df_sales.groupby(["product_name", "category"]).agg(
+                    total_qty_sold=("quantity", "sum"),
+                    total_net_sales=("net_revenue", "sum")
+                ).reset_index().sort_values("total_net_sales", ascending=False).head(5)
+                st.write(f"**Top 5 Selling Products ({selected_dash_year})**")
                 st.dataframe(df_products_top, use_container_width=True)
+        else:
+            df_product_summary = run_db_query("SELECT category, SUM(total_qty_sold) as total_qty, SUM(total_net_sales) as total_sales, SUM(total_profit) as total_profit FROM agg_sales_product_summary GROUP BY category;", show_error=False)
+            if not df_product_summary.empty:
+                c1, c2 = st.columns(2)
+                with c1:
+                    fig_cat = px.bar(
+                        df_product_summary, x="category", y="total_sales",
+                        title="Revenue by Product Category",
+                        labels={"category": "Category", "total_sales": "Net Sales ($)"},
+                        color="category", color_discrete_sequence=["#60A5FA", "#34D399", "#A78BFA"]
+                    )
+                    fig_cat.update_layout(paper_bgcolor="#1E293B", plot_bgcolor="#1E293B", font_color="#F1F5F9")
+                    st.plotly_chart(fig_cat, use_container_width=True)
+                with c2:
+                    df_products_top = run_db_query("SELECT product_name, category, total_qty_sold, total_net_sales FROM agg_sales_product_summary ORDER BY total_net_sales DESC LIMIT 5;", show_error=False)
+                    st.write("**Top 5 Selling Products**")
+                    st.dataframe(df_products_top, use_container_width=True)
                 
         # External spreadsheet data import (CEO and Sales Manager only)
         st.divider()

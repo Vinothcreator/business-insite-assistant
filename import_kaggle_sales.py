@@ -228,7 +228,7 @@ def process_and_ingest():
     df_customers = pd.DataFrame()
     df_sales = pd.DataFrame()
     
-    start_date = datetime(2025, 7, 1).date()
+    start_date = datetime(2024, 1, 1).date()
     end_date = datetime(2026, 7, 31).date()
     regions = ["North", "South", "East", "West"]
     sales_channels = ["Online", "Enterprise Sales", "Partner Channel"]
