@@ -13,7 +13,7 @@ import shutil
 import hashlib
 
 # Paths
-WORKSPACE_DIR = r"D:\Data_Analysatics\Mini-project4"
+WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
 ENV_PATH = os.path.join(WORKSPACE_DIR, ".env")
 DEST_DIR = os.path.join(WORKSPACE_DIR, "data", "raw")
 

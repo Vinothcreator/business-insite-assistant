@@ -12,6 +12,8 @@ import json
 from dotenv import load_dotenv
 load_dotenv()
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Import local engines (Hot-reloaded for dynamic percentiles classification)
 import analytics_engine as ae
 import ai_engine as aie
@@ -116,7 +118,7 @@ def get_db_connection():
 engine = get_db_connection()
 
 def get_last_updated_time():
-    manifest_path = "d:/Data_Analysatics/Mini-project4/data/raw/version_manifest.json"
+    manifest_path = os.path.join(BASE_DIR, "data", "raw", "version_manifest.json")
     if os.path.exists(manifest_path):
         try:
             with open(manifest_path, "r") as f:
@@ -615,13 +617,13 @@ with tab1:
                         st.rerun()
             else:
                 if import_source == "Load Sample Company Revenue (2024)":
-                    file_path = r"d:\Data_Analysatics\Mini-project4\data\raw\sample_company_revenue_2024.xlsx"
+                    file_path = os.path.join(BASE_DIR, "data", "raw", "sample_company_revenue_2024.xlsx")
                     source_name = "sample_company_revenue_2024.xlsx"
                 elif import_source == "Load Sample Company Revenue (2025)":
-                    file_path = r"d:\Data_Analysatics\Mini-project4\data\raw\sample_company_revenue.xlsx"
+                    file_path = os.path.join(BASE_DIR, "data", "raw", "sample_company_revenue.xlsx")
                     source_name = "sample_company_revenue.xlsx"
                 else:
-                    file_path = r"d:\Data_Analysatics\Mini-project4\Sales-datasets-excel\Retail-Store-Transactions.xlsx"
+                    file_path = os.path.join(BASE_DIR, "Sales-datasets-excel", "Retail-Store-Transactions.xlsx")
                     source_name = "Retail-Store-Transactions.xlsx"
                     
                 if "uploaded_filename" not in st.session_state or st.session_state["uploaded_filename"] != source_name:
@@ -1335,7 +1337,7 @@ with tab2:
         st.write("Analyze actual dialogue transcripts, track success probabilities, and coach sales representatives using advanced analytics models.")
         
         # Load weights/metrics
-        weights_path = os.path.join(r"D:\Data_Analysatics\Mini-project4", "saas_sales_model_weights.json")
+        weights_path = os.path.join(BASE_DIR, "saas_sales_model_weights.json")
         metrics = {"accuracy": 0.88, "precision": 0.86, "recall": 0.90, "f1_score": 0.88} # defaults
         if os.path.exists(weights_path):
             try:
@@ -1368,7 +1370,7 @@ with tab2:
         st.divider()
         st.markdown("### Select Sales Conversation to Analyze")
         
-        csv_path = os.path.join(r"D:\Data_Analysatics\Mini-project4", "saas_sales_conversations.csv")
+        csv_path = os.path.join(BASE_DIR, "saas_sales_conversations.csv")
         if os.path.exists(csv_path):
             df_convs = pd.read_csv(csv_path)
             

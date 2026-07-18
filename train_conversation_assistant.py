@@ -5,7 +5,7 @@ import json
 import os
 
 # Paths
-WORKSPACE_DIR = r"D:\Data_Analysatics\Mini-project4"
+WORKSPACE_DIR = os.path.dirname(os.path.abspath(__file__))
 METADATA_CSV = os.path.join(WORKSPACE_DIR, "saas_sales_conversations.csv")
 EMBEDDINGS_JSON = os.path.join(WORKSPACE_DIR, "saas_sales_embeddings.json")
 MODEL_OUTPUT_JSON = os.path.join(WORKSPACE_DIR, "saas_sales_model_weights.json")

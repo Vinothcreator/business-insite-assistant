@@ -8,7 +8,7 @@ import mysql.connector
 from sqlalchemy import create_engine
 
 # Output directories
-OUTPUT_DIR = r"D:\Data_Analysatics\Mini-project4"
+OUTPUT_DIR = os.path.dirname(os.path.abspath(__file__))
 DATASET_CSV = os.path.join(OUTPUT_DIR, "saas_sales_conversations.csv")
 DATASET_JSON = os.path.join(OUTPUT_DIR, "saas_sales_embeddings.json")
 
