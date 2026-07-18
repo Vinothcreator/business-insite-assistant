@@ -81,3 +81,23 @@ Before showing any database records, the obfuscator masks name fields (`J***n D*
    - Enter a valid OpenAI API key.
    - Submit: *"Show top 5 customers from North region"*.
    - **Expected Output**: Displays a customized chat message from **Live AI Mode (GPT-4o-mini)** showing the generated SQL: `SELECT customer_name, region FROM dim_customers WHERE region='North' LIMIT 5;` with masked names in the table.
+
+
+
+Simple API Keys: 
+
+1) kaggle kernels pull yasserh/walmart-sales-prediction-best-ml-algorithms
+
+2) kaggle kernels pull shivamb/data-science-in-2021-adaptation-or-adoption
+
+3) kaggle kernels pull shivamb/stock-market-prediction-using-time-series-models
+
+4) kaggle kernels pull yasserh/walmart-sales-prediction-best-ml-algorithms
+
+5) Gemini API Key
+
+ [YOUR_GEMINI_API_KEY]
+
+
+ Sales Analyatics API:
+ kaggle kernels output rawanyasser42x/sales-analysis -p /path/to/dest

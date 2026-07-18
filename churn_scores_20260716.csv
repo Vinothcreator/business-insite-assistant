@@ -1,0 +1,23 @@
+month,total_revenue,mom_change_pct,recency_component,trend_component,volatility_component,risk_score,risk_category,priority,action
+2024-03,433587.16,-7.0,0.072,0.119,0.123,10.1,Low Risk,1,Monitor monthly + standard upsell cadence
+2024-04,334937.24,-22.8,0.554,0.776,0.462,60.8,High Risk,4,Urgent revenue audit + sales reactivation campaign + channel review
+2024-05,249601.79,-25.5,1.0,1.0,0.789,94.7,Critical Risk,5,Immediate executive review + emergency recovery plan + pricing intervention
+2024-06,287319.84,15.1,0.736,0.941,0.821,82.9,Critical Risk,5,Immediate executive review + emergency recovery plan + pricing intervention
+2024-07,395468.14,37.6,0.0,0.528,0.747,37.2,Medium Risk,3,Quarterly business review + promotional push + pipeline analysis
+2024-08,474867.48,20.1,0.0,0.167,0.738,24.3,Low Risk,1,Monitor monthly + standard upsell cadence
+2024-09,443314.2,-6.6,0.0,0.036,0.698,18.7,Low Risk,1,Monitor monthly + standard upsell cadence
+2024-10,354248.71,-20.1,0.148,0.07,0.673,25.2,Low Risk,1,Monitor monthly + standard upsell cadence
+2024-11,231217.6,-34.7,1.0,0.203,0.786,66.7,High Risk,4,Urgent revenue audit + sales reactivation campaign + channel review
+2024-12,265802.07,15.0,0.886,0.244,0.819,64.4,High Risk,4,Urgent revenue audit + sales reactivation campaign + channel review
+2025-01,343262.0,29.1,0.0,0.207,0.79,27.0,Low Risk,1,Monitor monthly + standard upsell cadence
+2025-02,354665.27,3.3,0.0,0.171,0.76,25.0,Low Risk,1,Monitor monthly + standard upsell cadence
+2025-03,367604.7,3.6,0.0,0.136,0.732,23.1,Low Risk,1,Monitor monthly + standard upsell cadence
+2025-04,270166.96,-26.5,0.434,0.155,0.751,41.6,Medium Risk,3,Quarterly business review + promotional push + pipeline analysis
+2025-05,219179.33,-18.9,0.927,0.186,0.81,63.9,High Risk,4,Urgent revenue audit + sales reactivation campaign + channel review
+2025-06,253247.34,15.5,0.663,0.192,0.827,53.9,Medium Risk,3,Quarterly business review + promotional push + pipeline analysis
+2025-07,336585.12,32.9,0.0,0.166,0.805,25.9,Low Risk,1,Monitor monthly + standard upsell cadence
+2025-08,394274.82,17.1,0.0,0.127,0.785,24.1,Low Risk,1,Monitor monthly + standard upsell cadence
+2025-09,360248.12,-8.6,0.0,0.106,0.765,22.8,Low Risk,1,Monitor monthly + standard upsell cadence
+2025-10,297520.95,-17.4,0.198,0.104,0.758,30.5,Medium Risk,3,Quarterly business review + promotional push + pipeline analysis
+2025-11,230286.47,-22.6,1.0,0.117,0.787,63.8,High Risk,4,Urgent revenue audit + sales reactivation campaign + channel review
+2025-12,236081.82,2.5,0.833,0.125,0.807,57.9,Medium Risk,3,Quarterly business review + promotional push + pipeline analysis

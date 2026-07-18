@@ -107,6 +107,32 @@ class TestAnalyticsEngine(unittest.TestCase):
         self.assertGreater(res["new_revenue"], 0)
         self.assertGreater(res["new_profit"], 0)
 
+    def test_calculate_customer_churn_risk(self):
+        """
+        Validates the risk category assignment logic for customer churn.
+        """
+        df_customers = pd.DataFrame({
+            "customer_id": ["C101", "C102", "C103"],
+            "customer_name": ["Cust A", "Cust B", "Cust C"],
+            "recency": [10, 80, 20],
+            "frequency": [40, 29, 35]
+        })
+        df_issues = pd.DataFrame({
+            "customer_id": ["C101", "C102", "C102"],
+            "status": ["Resolved", "Open", "In Progress"]
+        })
+        
+        df_res = ae.calculate_customer_churn_risk(df_customers, df_issues)
+        
+        self.assertEqual(len(df_res), 3)
+        # Check C102 (recency 80, frequency 29, 2 open issues) -> risk_score 31.0 -> High Risk
+        c102_row = df_res[df_res["customer_id"] == "C102"].iloc[0]
+        self.assertEqual(c102_row["risk_category"], "High Risk")
+        
+        # Check C101 (recency 10, frequency 40, 0 open issues) -> risk_score 3.0 -> Low Risk
+        c101_row = df_res[df_res["customer_id"] == "C101"].iloc[0]
+        self.assertEqual(c101_row["risk_category"], "Low Risk")
+
     def test_financial_data_import(self):
         """
         Validates parsing of external transaction sheets and dynamic metric extraction.
@@ -128,6 +154,57 @@ class TestAnalyticsEngine(unittest.TestCase):
         
         margin = (total_prof / total_rev * 100)
         self.assertAlmostEqual(margin, 55.348837, places=4)
+        
+    def test_scan_financial_columns(self):
+        """
+        Validates column scanning and mapping on various styles of column headers.
+        """
+        df1 = pd.DataFrame({
+            "Date": ["2023-01-15"],
+            "Sales Amount": [50000.0],
+            "Region": ["North America"],
+            "Product": ["SaaS Suite"],
+            "Expenses": [20000.0]
+        })
+        mapped1 = ae.scan_financial_columns(df1)
+        self.assertEqual(mapped1["date"], "Date")
+        self.assertEqual(mapped1["sales"], "Sales Amount")
+        self.assertEqual(mapped1["expenses"], "Expenses")
+        self.assertEqual(mapped1["region"], "Region")
+        self.assertEqual(mapped1["product"], "Product")
+
+        df2 = pd.DataFrame({
+            "order_date": ["2025-01-01"],
+            "Net_Revenue": [12000.0],
+            "cost_price": [5000.0]
+        })
+        mapped2 = ae.scan_financial_columns(df2)
+        self.assertEqual(mapped2["date"], "order_date")
+        self.assertEqual(mapped2["sales"], "Net_Revenue")
+        self.assertEqual(mapped2["expenses"], "cost_price")
+
+    def test_calculate_imported_metrics(self):
+        """
+        Validates calculations of total revenue, MoM growth, yearly change, and profit/loss.
+        """
+        df = pd.DataFrame({
+            "Date": ["2023-01-15", "2023-02-15", "2024-01-15", "2024-02-15"],
+            "Sales Amount": [10000.0, 15000.0, 20000.0, 25000.0],
+            "Expenses": [4000.0, 6000.0, 8000.0, 10000.0]
+        })
+        mapped = ae.scan_financial_columns(df)
+        res = ae.calculate_imported_metrics(df, mapped)
+        
+        self.assertEqual(res["total_revenue"], 70000.0)
+        self.assertEqual(res["total_expenses"], 28000.0)
+        self.assertEqual(res["total_profit_loss"], 42000.0)
+        self.assertEqual(res["profit_margin"], 60.0)
+        
+        # MoM = (25000 - 20000) / 20000 * 100 = 25.0%
+        self.assertEqual(res["mom_growth"], 25.0)
+        
+        # Yearly change = (45000 - 25000) / 25000 * 100 = 80.0%
+        self.assertEqual(res["yearly_change"], 80.0)
 
 
 class TestAIEngine(unittest.TestCase):

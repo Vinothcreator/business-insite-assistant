@@ -25,36 +25,61 @@ engine_url = f"mysql+mysqlconnector://{DB_CONFIG['user']}:{password_encoded}@{DB
 engine = create_engine(engine_url)
 
 # RAG Local Knowledge Base (Business Rules, Column Info, Operations Guidelines)
-KNOWLEDGE_BASE = [
-    {
-        "topic": "Data Outages & Anomaly Records",
-        "content": "On March 15, 2026, the East region experienced a severe server crash starting at 08:00 AM until 11:59 PM. No sales transactions were processed. System repairs completed at midnight. Operations team confirmed no data was lost, but zero checkouts occurred during this downtime."
-    },
-    {
-        "topic": "Marketing Campaign & Promotion Spikes",
-        "content": "A major promotional push ran from May 1 to May 31, 2026. The Q2 Software Campaign featured 15% discounts for standard products and up to 30% for consulting/SLA bundles. This resulted in daily transaction volumes jumping by 120% above historical baseline."
-    },
-    {
-        "topic": "Late Delivery Logistics Issues",
-        "content": "During June 2026, the West region distribution hub experienced a local delivery driver strike. This carrier dispute delayed roughly 40% of shipments to Western states, triggering a spike in 'Late Delivery' support issues."
-    },
-    {
-        "topic": "Price Elasticity & What-If Simulations",
-        "content": "Price elasticity of B2B SaaS demand is estimated at -1.8. Discount elasticity is 0.40. Marketing spend elasticity is 0.25. Use the simulate_what_if formulas to predict volume shifts when adjusting price, marketing, or discounts."
-    },
-    {
-        "topic": "User Role Permissions (RBAC) & Governance",
-        "content": "CEO role has complete read access. Sales Manager role can read sales and CRM data but is blocked from issues/ops and audit trails. Operations Manager role is blocked from viewing financials (revenues, profit margins) but can read issue statistics and customer contact lists."
-    },
-    {
-        "topic": "Walmart Sales Prediction ML Benchmarks",
-        "content": "Walmart Sales Prediction study compared Multiple Linear Regression (MLR), Ridge Regression, Lasso Regression, ElasticNet, and 2nd Order Polynomial Regression. Inferences showed that Polynomial Regression overfits the dataset. Surprisingly, the simple Multiple Linear Regression (MLR) model gave the best overall performance with stable training and testing R2/RMSE scores. Dropping features using manual RFE (Recursive Feature Elimination) yielded optimal results."
-    },
-    {
-        "topic": "Data Science in 2021: Adaptation and Adoption Survey",
-        "content": "The Kaggle Data Science Survey 2021 analyzed global AI adoption. Countries like USA and China lead in volume, while Japan and Russia show strong competitive density in Kaggle top tiers. AI adoption is classified from 0 (No ML methods) to 4 (Established ML methods in production for 2+ years). The survey highlights high growth in Python as the primary language, followed by SQL and R, with Master's degree holders forming the largest education demographic."
-    }
-]
+# Dynamic RAG Knowledge Base Builder
+def get_dynamic_knowledge_base():
+    outages_text = "No severe sales anomalies detected in the current active warehouse."
+    campaign_text = "No promotional volume spikes detected in the current active warehouse."
+    logistics_text = "No delivery logistics delays found in the current support database."
+    
+    try:
+        df_daily = pd.read_sql("SELECT date_id, SUM(net_revenue) as sales FROM fact_sales WHERE status='Completed' GROUP BY date_id ORDER BY date_id;", engine)
+        if not df_daily.empty:
+            sales = df_daily["sales"].values.astype(float)
+            mean = np.mean(sales)
+            std = np.std(sales)
+            if std > 0:
+                z_scores = (sales - mean) / std
+                drops = df_daily[z_scores < -2.0]
+                spikes = df_daily[z_scores > 2.0]
+                
+                if not drops.empty:
+                    drop_dates = ", ".join(drops["date_id"].astype(str).tolist())
+                    outages_text = f"Sales drops were detected in the database on: {drop_dates}."
+                if not spikes.empty:
+                    spike_dates = ", ".join(spikes["date_id"].astype(str).tolist())
+                    campaign_text = f"Promotional or marketing volume spikes were detected in the database on: {spike_dates}."
+                    
+        df_issues = pd.read_sql("SELECT root_cause, COUNT(*) as count FROM raw_issues GROUP BY root_cause ORDER BY count DESC;", engine)
+        if not df_issues.empty:
+            issues_summary = ", ".join([f"{row['root_cause']} ({row['count']} cases)" for idx, row in df_issues.iterrows()])
+            logistics_text = f"Operational issues reported in support logs include: {issues_summary}."
+    except Exception as e:
+        pass
+        
+    return [
+        {
+            "topic": "Data Outages & Anomaly Records",
+            "content": outages_text
+        },
+        {
+            "topic": "Marketing Campaign & Promotion Spikes",
+            "content": campaign_text
+        },
+        {
+            "topic": "Late Delivery Logistics Issues",
+            "content": logistics_text
+        },
+        {
+            "topic": "Price Elasticity & What-If Simulations",
+            "content": "Price elasticity is estimated from database sales correlation trends. Use the What-If strategic sandbox simulation model to forecast adjustments based on changes to price and average customer discount rates."
+        },
+        {
+            "topic": "User Role Permissions (RBAC) & Governance",
+            "content": "CEO role has complete read access. Sales Manager role can read sales and CRM data but is blocked from issues/ops and audit trails. Operations Manager role is blocked from viewing financials (revenues, profit margins) but can read issue statistics and customer contact lists."
+        }
+    ]
+
+KNOWLEDGE_BASE = []
 
 # 1. SQL Sanitization Engine
 def sanitize_sql(sql_query):
@@ -241,10 +266,11 @@ def query_rag_knowledge_base(user_query):
     """
     Simulates a RAG keyword vector search across local knowledge base entries.
     """
+    kb = get_dynamic_knowledge_base()
     query_words = set(re.findall(r'\w+', user_query.lower()))
     matches = []
     
-    for entry in KNOWLEDGE_BASE:
+    for entry in kb:
         # Check matching word counts
         topic_words = set(re.findall(r'\w+', entry["topic"].lower()))
         content_words = set(re.findall(r'\w+', entry["content"].lower()))
@@ -418,6 +444,26 @@ def query_ai_assistant(user_query, user_role, session_context=None):
     # Query RAG Knowledge base for context matching
     rag_context = query_rag_knowledge_base(user_query)
     
+    # Build spreadsheet context if active
+    spreadsheet_context = ""
+    if session_context.get("spreadsheet_active"):
+        ss_sum = session_context.get("spreadsheet_summary", {})
+        spreadsheet_context = f"""
+        [ACTIVE WORKSPACE SPREADSHEET]
+        The user has loaded a spreadsheet named '{session_context.get("spreadsheet_filename", "Imported Data")}' into their active workspace.
+        Spreadsheet summary metrics:
+        - Total Revenue: ${ss_sum.get("total_revenue", 0.0):,.2f}
+        - Net Profit/Loss: ${ss_sum.get("total_profit_loss", 0.0):,.2f}
+        - Profit Margin: {ss_sum.get("profit_margin", 0.0):.1f}%
+        - Month-over-Month (MoM) Growth: {ss_sum.get("mom_growth", 0.0):.1f}%
+        - Year-over-Year (YoY) Change: {ss_sum.get("yearly_change", 0.0):.1f}%
+        - Column mappings: {ss_sum.get("mapped_columns", {})}
+        
+        Guidelines for spreadsheet context:
+        - When the user asks questions about the uploaded spreadsheet, their metrics, or active file, please answer them directly using the summary statistics above.
+        - Remind the user that these answers are pulled from their active spreadsheet data.
+        """
+    
     # Check if we can use Google Gemini Mode
     gemini_key = os.getenv("GEMINI_API_KEY")
     if gemini_key and len(gemini_key.strip()) > 10:
@@ -444,6 +490,8 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             We have local operational bulletins:
             {rag_context}
             
+            {spreadsheet_context}
+            
             Guidelines:
             1. ONLY SELECT statements are allowed.
             2. If user queries sensitive information, keep PII columns in SQL but note they are masked at the API boundary.
@@ -460,7 +508,7 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             )
             
             ai_text = response.text
-            return f"✨ **Google Gemini AI Mode (gemini-2.5-flash)**\n\n{ai_text}"
+            return f"**Google Gemini AI Mode (gemini-2.5-flash)**\n\n{ai_text}"
             
         except Exception as e:
             print(f"[WARNING] Gemini query failed ({e}). Falling back to OpenAI/Offline.")
@@ -490,6 +538,8 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             We have local operational bulletins:
             {rag_context}
             
+            {spreadsheet_context}
+            
             Guidelines:
             1. ONLY SELECT statements are allowed.
             2. If user queries sensitive information, keep PII columns in SQL but note they are masked at the API boundary.
@@ -506,7 +556,7 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             )
             
             ai_text = response.choices[0].message.content
-            return f"🟢 **Live AI Mode (GPT-4o-mini)**\n\n{ai_text}"
+            return f"**Live AI Mode (GPT-4o-mini)**\n\n{ai_text}"
             
         except Exception as e:
             # Fallback to offline on exception
@@ -516,49 +566,61 @@ def query_ai_assistant(user_query, user_role, session_context=None):
     query_lower = user_query.lower()
     
     welcome_msg = """
-    👋 Welcome to the **Offline Semantic Mode** of the AI Business InSite Assistant!
+    Welcome to the **Offline Semantic Mode** of the AI Business InSite Assistant!
     I can execute advanced predictive logic and data queries directly using local code.
     
     Here are the topics I can analyze for you:
-    1. 📈 **Forecast Sales**: 'Forecast daily sales trends for the next month'
-    2. 👥 **Customer Clusters**: 'Analyze customer value segments'
-    3. 🛒 **Market Basket**: 'Find recommended product cross-sell opportunities'
-    4. 🚨 **Anomalies**: 'Detect sales drops or transaction anomalies'
-    5. 🔄 **What-If Sandbox**: 'Simulate changing prices by 10% and marketing by 15%'
-    6. ⚠️ **Churn Risk**: 'List high risk churn customers'
-    7. 🎯 **Lead Scores**: 'Score active marketing pipeline leads'
-    8. 📚 **RAG Search**: 'Search company policies / outage schedules'
+    1. **Forecast Sales**: 'Forecast daily sales trends for the next month'
+    2. **Customer Clusters**: 'Analyze customer value segments'
+    3. **Market Basket**: 'Find recommended product cross-sell opportunities'
+    4. **Anomalies**: 'Detect sales drops or transaction anomalies'
+    5. **What-If Sandbox**: 'Simulate changing prices by 10% and marketing by 15%'
+    6. **Churn Risk**: 'List high risk churn customers'
+    7. **Lead Scores**: 'Score active marketing pipeline leads'
+    8. **RAG Search**: 'Search company policies / outage schedules'
     
     Please type one of these requests to run the model directly!
     """
     
     # 1. Forecast
     if any(k in query_lower for k in ["forecast", "future sales", "prediction"]):
-        # Load historical daily sales
-        with engine.connect() as conn:
-            df_hist = pd.read_sql(text("""
-                SELECT date_id, SUM(net_revenue) as sales 
-                FROM fact_sales 
-                WHERE status='Completed' 
-                GROUP BY date_id 
-                ORDER BY date_id;
-            """), conn)
-        if df_hist.empty:
-            return "No historical sales data found to build forecast."
+        is_imported = session_context.get("spreadsheet_active") and "df_sales_compat" in session_context
+        if is_imported:
+            df_sales_compat = session_context["df_sales_compat"]
+            df_hist = df_sales_compat.groupby("date_id")["net_revenue"].sum().reset_index()
+            df_hist.rename(columns={"net_revenue": "sales"}, inplace=True)
+            df_hist = df_hist.sort_values("date_id").reset_index(drop=True)
+            source_desc = f"Spreadsheet (`{session_context.get('spreadsheet_filename', 'Imported Data')}`)"
+        else:
+            # Load historical daily sales
+            with engine.connect() as conn:
+                df_hist = pd.read_sql(text("""
+                    SELECT date_id, SUM(net_revenue) as sales 
+                    FROM fact_sales 
+                    WHERE status='Completed' 
+                    GROUP BY date_id 
+                    ORDER BY date_id;
+                """), conn)
+            source_desc = "Database Warehouse (`fact_sales` table)"
+            
+        if df_hist.empty or len(df_hist) < 10:
+            return "No historical sales data (or insufficient data points, minimum 10) found to build forecast."
             
         res = ae.forecast_sales(df_hist["date_id"], df_hist["sales"])
         forecast_sum = sum(res["forecast_values"])
         avg_val = np.mean(res["forecast_values"])
         
         return f"""
-        🔵 **Offline Semantic Mode: Time-Series Forecast**
+        **Offline Semantic Mode: Time-Series Forecast**
         
         Successfully fitted a **Linear Trend + Multi-Period Seasonality** regression model using NumPy.
+        
+        **Data Source:** {source_desc}
         
         **Forecast Takeaways:**
         - **Predicted Sales (Next 30 Days)**: **${forecast_sum:,.2f}**
         - **Average Daily Projected Revenue**: **${avg_val:,.2f}**
-        - Fitted weekly seasonality cycles (Tue-Thu peak) and monthly trends (May campaign spike offsets).
+        - Fitted weekly seasonality cycles and monthly trends.
         
         *To visualize the fit line and confidence margins, please navigate to the **Advanced Analytics & ML** tab.*
         """
@@ -578,7 +640,7 @@ def query_ai_assistant(user_query, user_role, session_context=None):
         insights = "\n".join([f"- **{cluster}**: {count} customers" for cluster, count in counts.items()])
         
         return f"""
-        🔵 **Offline Semantic Mode: Customer Segmentation**
+        **Offline Semantic Mode: Customer Segmentation**
         
         Successfully executed an unsupervised **NumPy K-Means** (k=3) clustering algorithm on standardized Recency, Frequency, and Monetary (RFM) vectors.
         
@@ -590,13 +652,19 @@ def query_ai_assistant(user_query, user_role, session_context=None):
         
     # 3. Market Basket
     elif any(k in query_lower for k in ["recommend", "basket", "associate"]):
-        with engine.connect() as conn:
-            df_items = pd.read_sql(text("""
-                SELECT f.order_id, p.product_name 
-                FROM fact_sales f 
-                JOIN dim_products p ON f.product_id = p.product_id 
-                WHERE f.status='Completed';
-            """), conn)
+        is_imported = session_context.get("spreadsheet_active") and "df_items_compat" in session_context
+        if is_imported:
+            df_items = session_context["df_items_compat"]
+            source_desc = f"Spreadsheet (`{session_context.get('spreadsheet_filename', 'Imported Data')}`)"
+        else:
+            with engine.connect() as conn:
+                df_items = pd.read_sql(text("""
+                    SELECT f.order_id, p.product_name 
+                    FROM fact_sales f 
+                    JOIN dim_products p ON f.product_id = p.product_id 
+                    WHERE f.status='Completed';
+                """), conn)
+            source_desc = "Database Warehouse (`fact_sales` table)"
             
         if df_items.empty:
             return "No completed sales items found to process."
@@ -611,9 +679,11 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             rules_text += f"- If bought **{row['antecedent']}**, recommended to upsell **{row['consequent']}** (Lift: {row['lift']:.2f}, Confidence: {row['confidence']:.1%})\n"
             
         return f"""
-        🔵 **Offline Semantic Mode: Market Basket Association Analysis**
+        **Offline Semantic Mode: Market Basket Association Analysis**
         
-        Successfully compiled product associations from B2B customer purchases.
+        Successfully compiled product associations from purchases.
+        
+        **Data Source:** {source_desc}
         
         **Key Recommendations:**
         {rules_text}
@@ -641,7 +711,7 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             anoms_text += f"- **{an['date']}** ({an['type']}): Val ${an['value']:,.2f} | *{an['explanation']}*\n"
             
         return f"""
-        🔵 **Offline Semantic Mode: Rolling Anomaly Auditor**
+        **Offline Semantic Mode: Rolling Anomaly Auditor**
         
         Scanned daily transactional series using a 14-day rolling Z-score window.
         
@@ -684,7 +754,7 @@ def query_ai_assistant(user_query, user_role, session_context=None):
         res = ae.simulate_what_if(base_p, base_v, price_change, mkt_change, disc_change)
         
         return f"""
-        🔵 **Offline Semantic Mode: What-If Demand Simulation**
+        **Offline Semantic Mode: What-If Demand Simulation**
         
         Calculated monthly projections using price elasticity ($E_p=-1.8$) and promotion coefficients:
         
@@ -715,7 +785,7 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             churn_text += f"- **{row['customer_name']}** (Risk Score: **{row['risk_score']}/100**): Recency: {row['recency']} days, Open tickets: {row['open_issues']}\n"
             
         return f"""
-        🔵 **Offline Semantic Mode: Customer Churn Diagnostics**
+        **Offline Semantic Mode: Customer Churn Diagnostics**
         
         Aggregated active accounts and mapped Recency and support tickets:
         
@@ -738,7 +808,7 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             leads_text += f"- **{row['lead_name']}** (Final Score: **{row['final_score']}/100**): Source: {row['source']}, Status: {row['status']}\n"
             
         return f"""
-        🔵 **Offline Semantic Mode: Lead Scoring Engine**
+        **Offline Semantic Mode: Lead Scoring Engine**
         
         Recalculated lead conversion scores using campaign channel indicators:
         
@@ -751,7 +821,7 @@ def query_ai_assistant(user_query, user_role, session_context=None):
     # 8. RAG Search (Bulletins, Policies, and Jupyter Notebook Benchmarks)
     elif any(k in query_lower for k in ["bulletin", "policy", "outage", "campaign", "guideline", "search", "walmart", "survey", "kaggle", "adoption", "adaptation", "science in 2021"]):
         return f"""
-        🔵 **Offline Semantic Mode: RAG Knowledge Base Query**
+        **Offline Semantic Mode: RAG Knowledge Base Query**
         
         **Matching Operational Bulletins & Dataset Analyses Found:**
         
@@ -816,38 +886,14 @@ def query_ai_assistant(user_query, user_role, session_context=None):
 
     # January 2025 Fact Check
     if "january 2025" in query_lower:
-        return """
-        🔵 **Offline Semantic Mode: Database Query Result**
-        
-        ### Revenue for January 2025 (Benchmark Verification)
-        This query retrieves the historical sales revenue records for January 2025.
-        
-        | Period | Net Revenue ($) |
-        | --- | --- |
-        | January 2025 | 2,567,890.00 |
-        
-        **📝 Generated SQL Statement:**
-        ```sql
-        SELECT SUM(net_revenue) FROM fact_sales f JOIN dim_dates d ON f.date_id = d.date_id WHERE d.month = 1 AND d.year = 2025;
-        ```
-        """
+        bi_sql = "SELECT 'January 2025' as `Period`, SUM(f.net_revenue) as `Net Revenue ($)` FROM fact_sales f JOIN dim_dates d ON f.date_id = d.date_id WHERE d.month = 1 AND d.year = 2025;"
+        bi_title = "Revenue for January 2025 (Benchmark Verification)"
+        bi_explanation = "This query retrieves the historical sales revenue records for January 2025."
     # December 2024 Fact Check
     elif "december 2024" in query_lower:
-        return """
-        🔵 **Offline Semantic Mode: Database Query Result**
-        
-        ### Order Count for December 2024 (Benchmark Verification)
-        This query counts total orders completed in the period December 2024.
-        
-        | Period | Total Completed Orders |
-        | --- | --- |
-        | December 2024 | 2,345 |
-        
-        **📝 Generated SQL Statement:**
-        ```sql
-        SELECT COUNT(DISTINCT order_id) FROM fact_sales f JOIN dim_dates d ON f.date_id = d.date_id WHERE d.month = 12 AND d.year = 2024;
-        ```
-        """
+        bi_sql = "SELECT 'December 2024' as `Period`, COUNT(DISTINCT order_id) as `Total Completed Orders` FROM fact_sales f JOIN dim_dates d ON f.date_id = d.date_id WHERE d.month = 12 AND d.year = 2024;"
+        bi_title = "Order Count for December 2024 (Benchmark Verification)"
+        bi_explanation = "This query counts total orders completed in the period December 2024."
 
     # Turn 5: Compare this to Q4
     elif "compare this to q4" in query_lower:
@@ -941,34 +987,28 @@ def query_ai_assistant(user_query, user_role, session_context=None):
 
     # Marketing ROI
     elif "roi" in query_lower and "marketing" in query_lower:
-        return """
-        🔵 **Offline Semantic Mode: Marketing ROI Calculations**
-        
-        ### ROI Analysis: Q1 Marketing Campaign
-        - **Total Marketing Spend**: **$45,000.00**
-        - **Attributed Net Revenue**: **$180,000.00**
-        - **Attributed Net Profit**: **$104,400.00**
-        
-        $$\\text{ROI} = \\frac{\\text{Net Profit} - \\text{Marketing Spend}}{\\text{Marketing Spend}} \\times 100$$
-        
-        $$\\text{ROI} = \\frac{104,400 - 45,000}{45,000} \\times 100 = 132.00\\%$$
-        
-        - **Conclusion**: The Q1 marketing campaign achieved a highly positive **132% ROI**, validating direct referral acquisition spends.
+        bi_sql = """
+        SELECT 
+            'Q1 Marketing Campaign' as `Campaign`,
+            45000.00 as `Total Investment ($)`,
+            COUNT(*) * 850.00 as `Simulated Customer Value ($)`,
+            ROUND(((COUNT(*) * 850.00 - 45000.00) / 45000.00) * 100, 2) as `Marketing ROI (%)`
+        FROM dim_customers;
         """
+        bi_title = "Marketing ROI Calculations"
+        bi_explanation = "This query computes the ROI of the Q1 Marketing Campaign dynamically from customer accounts and simulated values."
     # Customer Acquisition Cost (CAC)
     elif "customer acquisition cost" in query_lower or "cac" in query_lower:
-        return """
-        🔵 **Offline Semantic Mode: Customer Acquisition Cost (CAC)**
-        
-        ### Corporate CAC Analysis
-        - **Total Sales & Marketing Spend (Q1-Q2)**: **$120,000.00**
-        - **New Customers Acquired**: **150**
-        
-        $$\\text{CAC} = \\frac{\\text{Total Marketing & Sales Cost}}{\\text{New Customers Acquired}} = \\frac{120,000}{150} = \\$800.00$$
-        
-        - **Average CAC**: **$800.00** per enterprise client.
-        - **Trend**: Decreased by 12% from last quarter due to improved referral conversion channels.
+        bi_sql = """
+        SELECT 
+            'Corporate' as `Segment`,
+            120000.00 as `Total Sales & Marketing Spend ($)`,
+            COUNT(*) as `Clients Acquired`,
+            ROUND(120000.00 / COUNT(*), 2) as `Average CAC ($)`
+        FROM dim_customers;
         """
+        bi_title = "Corporate Customer Acquisition Cost (CAC) Analysis"
+        bi_explanation = "This query calculates our Customer Acquisition Cost (CAC) based on a total marketing spend of $120,000 divided by the actual number of customer accounts in the database."
 
     # Q1 vs Q2 2025 revenue (mapped to Q1 vs Q2 2026 for our mock data)
     elif "compare" in query_lower and "q1" in query_lower and "q2" in query_lower:
@@ -1004,15 +1044,18 @@ def query_ai_assistant(user_query, user_role, session_context=None):
 
     # Declining products
     elif "declining" in query_lower and "product" in query_lower:
-        return """
-        🔵 **Offline Semantic Mode: Product Decline Alert**
-        
-        ### Underperforming & Declining Products (Q2 vs Q1 Volume)
-        - **Standard Subscription Plan**: **-15.4%** decline in units sold (Customers transitioning to bundles).
-        - **SLA Consulting Services**: **-8.2%** decline (Transitioned to automated tier plans).
-        - **Enterprise Custom Connector**: **-4.0%** decline.
-        - **Recommendation**: Focus on standardizing bundle features to arrest subscription churn.
+        bi_sql = """
+        SELECT 
+            category as `Product Category`, 
+            SUM(total_qty_sold) as `Total Units Sold`, 
+            SUM(total_net_sales) as `Total Sales ($)` 
+        FROM agg_sales_product_summary 
+        GROUP BY category 
+        ORDER BY total_qty_sold ASC 
+        LIMIT 3;
         """
+        bi_title = "Underperforming & Declining Product Categories"
+        bi_explanation = "This query aggregates and identifies product categories with the lowest total sales volumes to highlight areas at risk of decline."
     # Customer segment
     elif "profitable customer segment" in query_lower or "profitable segment" in query_lower:
         bi_sql = """
@@ -1043,22 +1086,17 @@ def query_ai_assistant(user_query, user_role, session_context=None):
 
     # Pricing strategy What-If
     elif "pricing strategy" in query_lower or ("increase prices" in query_lower and "revenue impact" in query_lower) or "increase prices by 10%" in query_lower:
-        # What if price increases by 10%
-        return """
-        🔵 **Offline Semantic Mode: What-If Pricing Strategy Simulator**
-        
-        ### Analysis: Increasing Prices by +10%
-        - **Price Elasticity of Demand**: **-1.8**
-        - **Marketing Spend Shift**: **0.0%** (no change)
-        - **Expected Volume Impact**: **-18.0%** decline in unit sales
-        
-        **Financial Projections:**
-        - **Current Net Revenue**: **$2,333,088.00**
-        - **Projected Net Revenue**: **$2,104,445.00** (a drop of **-9.80%**)
-        - **Projected Net Profit**: **$1,348,500.00** (a drop of **-5.40%**)
-        
-        - **Conclusion**: Due to high price sensitivity (elasticity of -1.8), a flat +10% price increase will contract both volume and net profit. The recommended strategy is maintaining prices while utilizing targeted campaign discounts (10-15%) to optimize margins.
+        bi_sql = """
+        SELECT 
+            AVG(unit_price) as `Current Avg Price ($)`,
+            SUM(net_revenue) as `Current Net Revenue ($)`,
+            AVG(unit_price) * 1.10 as `Projected Avg Price ($) (+10%)`,
+            SUM(net_revenue) * 0.902 as `Projected Net Revenue ($) (Ep = -1.8)`
+        FROM fact_sales 
+        WHERE status = 'Completed';
         """
+        bi_title = "What-If Pricing Strategy Simulator"
+        bi_explanation = "This simulator calculates current averages and projects the impact of a +10% price increase on revenue assuming price elasticity of -1.8 (yielding -18% volume, overall -9.8% revenue impact)."
 
     # Sales peak last year
     elif "sales peak" in query_lower and "last year" in query_lower:
@@ -1079,15 +1117,16 @@ def query_ai_assistant(user_query, user_role, session_context=None):
 
     # Customer count 2024
     elif "customers" in query_lower and "2024" in query_lower:
-        return """
-        🔵 **Offline Semantic Mode: Customer Count Report**
-        
-        ### Customer Registers for 2024 (Benchmark Verification)
-        - **Fiscal Year 2024 (Pre-Migration)**: **350** active customers.
-        - **Fiscal Year 2025-2026 (Post-Migration)**: **500** active customers.
-        
-        *Overall growth rate in customer acquisition stands at **+42.8%** year-over-year.*
+        bi_sql = """
+        SELECT 
+            'FY2024 (Baseline)' as `Fiscal Year`, 350 as `Active Customers`, 0.00 as `Monetary Spend ($)`
+        UNION ALL
+        SELECT 
+            'FY2025-2026 (Live Data)' as `Fiscal Year`, COUNT(DISTINCT customer_id) as `Active Customers`, SUM(monetary) as `Monetary Spend ($)`
+        FROM dim_customers;
         """
+        bi_title = "Customer Count & Acquisition Benchmark Report"
+        bi_explanation = "Compares historical benchmark registers for 2024 against actual customer registrations and aggregate spends in the current database."
 
     # Average order value (AOV)
     elif "average order value" in query_lower or "avg_order_value" in query_lower or "aov" in query_lower:
@@ -1211,14 +1250,20 @@ def query_ai_assistant(user_query, user_role, session_context=None):
 
     # Turn 7: Which region had the best performance last quarter and why?
     elif "region" in query_lower and "best performance" in query_lower and "last quarter" in query_lower:
-        return """
-        🔵 **Offline Semantic Mode: Regional Performance Summary**
-        
-        The **East region** had the best performance last quarter (Q2 2026) with **$183,078.50** in net sales across **32 active clients**.
-        
-        **Why?**
-        This performance was driven by a **120% spike** in enterprise SaaS transaction volumes during the Q2 Software Promotional Campaign run throughout May, along with a high concentration of enterprise-tier clients in Eastern states.
+        bi_sql = """
+        SELECT 
+            r.region as `Region`, 
+            SUM(f.net_revenue) as `Net Revenue ($)`, 
+            COUNT(DISTINCT f.customer_id) as `Active Clients` 
+        FROM fact_sales f 
+        JOIN dim_regions r ON f.region_id = r.region_id 
+        WHERE f.status = 'Completed' 
+        GROUP BY r.region 
+        ORDER BY `Net Revenue ($)` DESC 
+        LIMIT 1;
         """
+        bi_title = "Regional Performance Summary"
+        bi_explanation = "Aggregates net revenue and customer accounts for completed transactions to locate the highest performing sales region."
 
     # Top region generally
     elif "region" in query_lower and any(k in query_lower for k in ["sales", "revenue", "best", "top"]):
@@ -1287,20 +1332,120 @@ def query_ai_assistant(user_query, user_role, session_context=None):
             table_md = "\n".join(lines)
             
             return f"""
-            🔵 **Offline Semantic Mode: Database Query Result**
+            **Offline Semantic Mode: Database Query Result**
             
             ### {bi_title}
             {bi_explanation}
             
             {table_md}
             
-            **📝 Generated SQL Statement:**
+            **Generated SQL Statement:**
             ```sql
             {bi_sql.strip()}
             ```
             """
         except Exception as e:
-            return f"❌ **Offline Semantic Mode Execution Error**: {str(e)}"
+            return f"**Offline Semantic Mode Execution Error**: {str(e)}"
 
     # Fallback default help
     return welcome_msg
+
+
+def generate_financial_insights(metrics, ai_mode, user_role):
+    """
+    Generates AI executive insights for uploaded spreadsheet metrics.
+    Attempts Google Gemini or OpenAI if selected and keys are present.
+    Otherwise, falls back to Offline Smart Insights.
+    """
+    total_rev = metrics["total_revenue"]
+    mom_growth = metrics["mom_growth"]
+    yearly_change = metrics["yearly_change"]
+    total_profit_loss = metrics["total_profit_loss"]
+    profit_margin = metrics["profit_margin"]
+    
+    yearly_summary_str = ""
+    if "yearly_data" in metrics and metrics["yearly_data"] is not None:
+        yd = metrics["yearly_data"]
+        for _, row in yd.iterrows():
+            yearly_summary_str += f"- Year {int(row['year'])}: Revenue = ${row['revenue']:,.2f}, Expenses = ${row['expenses']:,.2f}, Profit/Loss = ${row['profit_loss']:,.2f}\n"
+
+    system_prompt = f"You are the expert 'AI Business InSite Assistant'. The user role is: {user_role}. Generate 3 key executive insights highlighting the revenue trend, profit efficiency, and overall trajectory based on the uploaded data."
+    
+    prompt = f"""
+    Analyze the following financial performance data from an uploaded spreadsheet:
+    - Total Revenue: ${total_rev:,.2f}
+    - MoM Growth: {mom_growth:+.1f}%
+    - YoY/Yearly Change: {yearly_change:+.1f}% if available
+    - Net Profit/Loss: ${total_profit_loss:,.2f}
+    - Net Profit Margin: {profit_margin:.1f}%
+    
+    Yearly breakdown:
+    {yearly_summary_str}
+    
+    Generate exactly 3 key executive bullet-point insights highlighting the revenue trend, profit efficiency, and overall trajectory. Keep each insight concise, professional, and actionable. Start each bullet point with an emoji matching the insight. Do not include markdown code block formatting or long introductions.
+    """
+    
+    # 1. Gemini Mode
+    if ai_mode == "Google Gemini AI Mode (requires Gemini Key)":
+        gemini_key = os.getenv("GEMINI_API_KEY")
+        if gemini_key and len(gemini_key.strip()) > 10:
+            try:
+                from google import genai
+                from google.genai import types
+                client = genai.Client(api_key=gemini_key)
+                
+                response = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                        temperature=0.2
+                    )
+                )
+                return f"**Google Gemini AI Mode (gemini-2.5-flash) Insights**\n\n{response.text}"
+            except Exception as e:
+                print(f"[WARNING] Gemini insights failed ({e}). Falling back to Offline.")
+
+    # 2. OpenAI Mode
+    if ai_mode == "Live AI Mode (requires OpenAI Key)":
+        openai_key = os.getenv("OPENAI_API_KEY")
+        if openai_key and len(openai_key.strip()) > 10:
+            try:
+                from openai import OpenAI
+                client = OpenAI(api_key=openai_key)
+                
+                response = client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.2
+                )
+                return f"**Live AI Mode (GPT-4o-mini) Insights**\n\n{response.choices[0].message.content}"
+            except Exception as e:
+                print(f"[WARNING] OpenAI insights failed ({e}). Falling back to Offline.")
+
+    # 3. Offline Semantic / Rule-Based Insights
+    # Determine MoM sign
+    mom_direction = "growth" if mom_growth >= 0 else "decline"
+    mom_arrow = "+" if mom_growth >= 0 else "-"
+    yoy_direction = "growth" if yearly_change >= 0 else "decline"
+    yoy_arrow = "+" if yearly_change >= 0 else "-"
+    
+    insight_1 = f"**Revenue Momentum**: The business registered a total net sales revenue of **${total_rev:,.2f}**, marked by a short-term MoM {mom_direction} of **{mom_arrow} {abs(mom_growth):.1f}%** in the latest month."
+    
+    if yearly_change != 0.0:
+        insight_2 = f"**Yearly Trajectory**: Multi-year performance shows a Year-over-Year (YoY) {yoy_direction} of **{yoy_arrow} {abs(yearly_change):.1f}%**, reflecting the longer-term structural health of sales volume."
+    else:
+        insight_2 = "**Yearly Trajectory**: Multi-year trend data is currently baseline, requiring additional historical intervals to compute YoY trajectory variations."
+        
+    margin_status = "exceeding" if profit_margin >= 50.0 else "below"
+    margin_eval = "high profitability and excellent cost optimization" if profit_margin >= 50.0 else "heightened operating expenditures or lower product pricing leverage"
+    insight_3 = f"**Profit Efficiency**: Net Profit/Loss stands at **${total_profit_loss:,.2f}** with an average margin of **{profit_margin:.1f}%**, which is **{margin_status}** the company's 50.0% target benchmark due to {margin_eval}."
+    
+    return f"""**Offline Smart Insights**
+
+{insight_1}
+{insight_2}
+{insight_3}"""

@@ -354,24 +354,42 @@ def calculate_customer_churn_risk(df_customers, df_issues):
         risk_score = 0.60 * rec_score + 0.30 * freq_score + 0.10 * issues_score
         risk_score = round(float(risk_score), 1)
         
-        if risk_score > 70:
-            category = "High Risk"
-        elif risk_score > 35:
-            category = "Medium Risk"
-        else:
-            category = "Low Risk"
-            
         churn_records.append({
             "customer_id": c_id,
             "customer_name": c_name,
             "recency": recency,
             "frequency": frequency,
             "open_issues": open_tickets,
-            "risk_score": risk_score,
-            "risk_category": category
+            "risk_score": risk_score
         })
         
-    return pd.DataFrame(churn_records)
+    if not churn_records:
+        return pd.DataFrame()
+        
+    df_churn = pd.DataFrame(churn_records)
+    
+    # Determine category dynamically based on percentiles of risk_score
+    scores = df_churn["risk_score"].values
+    if len(scores) > 1 and np.max(scores) > np.min(scores):
+        high_threshold = np.percentile(scores, 85) # Top 15% are High Risk
+        med_threshold = np.percentile(scores, 50)  # Next 35% are Medium Risk
+        if high_threshold == med_threshold:
+            med_threshold = np.percentile(scores, 30)
+    else:
+        high_threshold = 15.0
+        med_threshold = 11.0
+        
+    categories = []
+    for score in scores:
+        if score >= high_threshold:
+            categories.append("High Risk")
+        elif score >= med_threshold:
+            categories.append("Medium Risk")
+        else:
+            categories.append("Low Risk")
+            
+    df_churn["risk_category"] = categories
+    return df_churn
 
 
 # 7. Lead Scoring Algorithm
@@ -429,3 +447,195 @@ def calculate_lead_scoring(df_leads):
         })
         
     return pd.DataFrame(scored_records)
+
+
+def scan_financial_columns(df):
+    """
+    Scans columns of a dataframe to identify Date, Sales, Expenses, Product, and Region.
+    Returns a dictionary of mapped column names or None if critical columns (Date, Sales) are missing.
+    """
+    cols = list(df.columns)
+    cols_lower = [c.lower().strip() for c in cols]
+    
+    date_col = None
+    sales_col = None
+    expenses_col = None
+    product_col = None
+    region_col = None
+    
+    # 1. Date Col
+    date_candidates = ["date", "order_date", "timestamp", "year-month", "date_id"]
+    for cand in date_candidates:
+        if cand in cols_lower:
+            date_col = cols[cols_lower.index(cand)]
+            break
+    if not date_col:
+        # Fallback: look for substring 'date'
+        for i, cl in enumerate(cols_lower):
+            if "date" in cl:
+                date_col = cols[i]
+                break
+                
+    # 2. Sales Col
+    sales_candidates = ["sales amount", "sales_amount", "salesamount", "sales", "revenue", "net_revenue", "total_revenue", "rev", "totalprice", "total_price", "total price", "item_outlet_sales"]
+    for cand in sales_candidates:
+        if cand in cols_lower:
+            sales_col = cols[cols_lower.index(cand)]
+            break
+    if not sales_col:
+        # Fallback: look for substring 'sales' or 'revenue' or 'amount' or 'price'
+        for i, cl in enumerate(cols_lower):
+            if "sales" in cl or "revenue" in cl or "amount" in cl or "price" in cl or "outlet_sales" in cl:
+                sales_col = cols[i]
+                break
+                
+    # 3. Expenses Col
+    expenses_candidates = ["expenses", "expense", "cost", "total_expenses", "cost_amount", "cost_price"]
+    for cand in expenses_candidates:
+        if cand in cols_lower:
+            expenses_col = cols[cols_lower.index(cand)]
+            break
+    if not expenses_col:
+        for i, cl in enumerate(cols_lower):
+            if "expense" in cl or "cost" in cl:
+                expenses_col = cols[i]
+                break
+                
+    # 4. Product Col
+    product_candidates = ["product", "productname", "product_name", "product_id", "productid", "item_identifier", "item_type"]
+    for cand in product_candidates:
+        if cand in cols_lower:
+            product_col = cols[cols_lower.index(cand)]
+            break
+    if not product_col:
+        for i, cl in enumerate(cols_lower):
+            if "product" in cl or "item" in cl:
+                product_col = cols[i]
+                break
+                
+    # 5. Region Col
+    region_candidates = ["region", "region_id", "regionid", "location", "outlet_identifier", "outlet_id", "outletid"]
+    for cand in region_candidates:
+        if cand in cols_lower:
+            region_col = cols[cols_lower.index(cand)]
+            break
+    if not region_col:
+        for i, cl in enumerate(cols_lower):
+            if "region" in cl or "location" in cl or "outlet" in cl:
+                region_col = cols[i]
+                break
+                
+    # 6. Order ID Col
+    order_col = None
+    order_candidates = ["order_id", "orderid", "order id", "transaction_id", "transaction id", "tx_id", "tx id", "transactionid"]
+    for cand in order_candidates:
+        if cand in cols_lower:
+            order_col = cols[cols_lower.index(cand)]
+            break
+    if not order_col:
+        for i, cl in enumerate(cols_lower):
+            if "order" in cl or "transaction" in cl or "tx" in cl:
+                order_col = cols[i]
+                break
+                
+    return {
+        "date": date_col,
+        "sales": sales_col,
+        "expenses": expenses_col,
+        "product": product_col,
+        "region": region_col,
+        "order_id": order_col
+    }
+
+
+def calculate_imported_metrics(df, mapped_cols, default_margin=40.0):
+    """
+    Calculates total revenue, MoM growth, yearly change, and profit/loss
+    from the imported dataframe based on mapped columns.
+    """
+    date_col = mapped_cols["date"]
+    sales_col = mapped_cols["sales"]
+    expenses_col = mapped_cols["expenses"]
+    
+    # Copy and clean
+    df_clean = df.copy()
+    
+    # Parse Date
+    df_clean[date_col] = pd.to_datetime(df_clean[date_col], format='mixed', dayfirst=True, errors='coerce')
+    df_clean = df_clean.dropna(subset=[date_col])
+    
+    # Ensure numerical columns
+    df_clean[sales_col] = pd.to_numeric(df_clean[sales_col], errors='coerce').fillna(0.0)
+    
+    # Calculate Total Revenue
+    total_revenue = df_clean[sales_col].sum()
+    
+    # Calculate Expenses
+    total_expenses = 0.0
+    if expenses_col and expenses_col in df_clean.columns:
+        df_clean[expenses_col] = pd.to_numeric(df_clean[expenses_col], errors='coerce').fillna(0.0)
+        total_expenses = df_clean[expenses_col].sum()
+    else:
+        # Fallback to simulated expenses using default margin
+        total_expenses = total_revenue * (1 - default_margin / 100.0)
+    
+    # PROFIT/LOSS = Total Revenue - Total Expenses
+    total_profit_loss = total_revenue - total_expenses
+    profit_margin = (total_profit_loss / total_revenue * 100) if total_revenue > 0 else 0.0
+    
+    # Add Year and Month columns
+    df_clean["year"] = df_clean[date_col].dt.year
+    df_clean["month"] = df_clean[date_col].dt.month
+    
+    # Group by Year and Month for MoM growth
+    df_monthly = df_clean.groupby(["year", "month"])[sales_col].sum().reset_index()
+    # Sort chronologically
+    df_monthly = df_monthly.sort_values(["year", "month"]).reset_index(drop=True)
+    
+    # MoM GROWTH = ((This Month Revenue - Last Month Revenue) / Last Month Revenue) * 100
+    mom_growth = 0.0
+    if len(df_monthly) >= 2:
+        curr_rev = float(df_monthly.iloc[-1][sales_col])
+        prev_rev = float(df_monthly.iloc[-2][sales_col])
+        mom_growth = ((curr_rev - prev_rev) / prev_rev) * 100 if prev_rev > 0 else 0.0
+    elif len(df_monthly) == 1:
+        mom_growth = 0.0
+        
+    # Group by Year for Yearly Change and Profit/Loss comparison across years
+    # Calculate Revenue and Expenses by year
+    if expenses_col and expenses_col in df_clean.columns:
+        df_yearly = df_clean.groupby("year").agg(
+            revenue=(sales_col, "sum"),
+            expenses=(expenses_col, "sum")
+        ).reset_index()
+    else:
+        df_yearly = df_clean.groupby("year").agg(
+            revenue=(sales_col, "sum")
+        ).reset_index()
+        df_yearly["expenses"] = 0.0
+        
+    df_yearly["profit_loss"] = df_yearly["revenue"] - df_yearly["expenses"]
+    df_yearly = df_yearly.sort_values("year").reset_index(drop=True)
+    
+    # YEARLY CHANGE = ((This Year Revenue - Last Year Revenue) / Last Year Revenue) * 100
+    yearly_change = 0.0
+    if len(df_yearly) >= 2:
+        this_year_rev = float(df_yearly.iloc[-1]["revenue"])
+        last_year_rev = float(df_yearly.iloc[-2]["revenue"])
+        yearly_change = ((this_year_rev - last_year_rev) / last_year_rev) * 100 if last_year_rev > 0 else 0.0
+    elif len(df_yearly) == 1:
+        yearly_change = 0.0
+        
+    return {
+        "total_revenue": total_revenue,
+        "total_expenses": total_expenses,
+        "total_profit_loss": total_profit_loss,
+        "profit_margin": profit_margin,
+        "mom_growth": mom_growth,
+        "yearly_change": yearly_change,
+        "monthly_data": df_monthly,
+        "yearly_data": df_yearly,
+        "sales_col": sales_col,
+        "date_col": date_col,
+        "expenses_col": expenses_col
+    }

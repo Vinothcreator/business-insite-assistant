@@ -417,13 +417,13 @@ def setup_database():
             "log_message": f"Quantity ({row['quantity']}) or Price ({row['unit_price']}) is negative. Record excluded.", "severity": "CRITICAL"
         })
         
-    # 3. Duplicate Order IDs
-    dup_mask = df_sales.duplicated(subset=["order_id"], keep="first")
+    # 3. Duplicate Transaction Items (Same order_id and same product_id)
+    dup_mask = df_sales.duplicated(subset=["order_id", "product_id"], keep="first")
     dup_sales = df_sales[dup_mask]
     for idx, row in dup_sales.iterrows():
         dq_records.append({
-            "table_name": "raw_sales", "record_id": str(row["order_id"]), "check_name": "Duplicate Primary Key",
-            "log_message": f"Duplicate transaction with order_id {row['order_id']} found. Record excluded.", "severity": "CRITICAL"
+            "table_name": "raw_sales", "record_id": f"{row['order_id']}_{row['product_id']}", "check_name": "Duplicate Transaction Item",
+            "log_message": f"Duplicate transaction item with order_id {row['order_id']} and product_id {row['product_id']} found. Record excluded.", "severity": "CRITICAL"
         })
         
     if dq_records:
@@ -435,11 +435,11 @@ def setup_database():
     valid_sales_mask = (
         (df_sales["quantity"] >= 0) & 
         (df_sales["unit_price"] >= 0) & 
-        (~df_sales["order_id"].isin(dup_sales["order_id"])) &
         (df_sales["customer_id"].notna()) &
         (df_sales["product_id"].notna())
     )
     df_sales_clean = df_sales[valid_sales_mask]
+    df_sales_clean = df_sales_clean.drop_duplicates(subset=["order_id", "product_id"])
     
     # Step B: Dimensions
     # dim_products
@@ -612,7 +612,7 @@ def setup_database():
         
     cursor.execute("""
     CREATE TABLE fact_sales (
-        order_id VARCHAR(50) PRIMARY KEY,
+        order_id VARCHAR(50),
         customer_id VARCHAR(50),
         product_id VARCHAR(50),
         date_id DATE,
@@ -628,6 +628,7 @@ def setup_database():
         profit_amount DECIMAL(12,2),
         profit_margin DECIMAL(8,2),
         status VARCHAR(50),
+        PRIMARY KEY (order_id, product_id),
         FOREIGN KEY (customer_id) REFERENCES dim_customers(customer_id),
         FOREIGN KEY (product_id) REFERENCES dim_products(product_id),
         FOREIGN KEY (date_id) REFERENCES dim_dates(date_id),
